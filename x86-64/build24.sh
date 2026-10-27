@@ -34,6 +34,21 @@ cat > /home/build/immortalwrt/files/etc/config/mwan3 <<'EOF'
 EOF
 echo "✅ mwan3 默认配置已清空"
 
+# ===== 开机保障脚本：注册 START=99 自启链接 =====
+# files/etc/init.d/zz-bootfix 会在每次开机最后复查并拉起 OAF / AdGuardHome /
+# nlbwmon，同时把状态写进 /etc/config/boot-fix.log。缺它就等于没有兜底，
+# 因此这里做存在性断言，避免静默产出"看着正常但服务不启动"的固件。
+if [ -f /home/build/immortalwrt/files/etc/init.d/zz-bootfix ]; then
+    mkdir -p /home/build/immortalwrt/files/etc/rc.d
+    chmod +x /home/build/immortalwrt/files/etc/init.d/zz-bootfix
+    ln -sf ../init.d/zz-bootfix /home/build/immortalwrt/files/etc/rc.d/S99zz-bootfix
+    [ -x /home/build/immortalwrt/files/usr/bin/adg-mode ] && chmod +x /home/build/immortalwrt/files/usr/bin/adg-mode
+    echo "✅ 已注册开机保障脚本 S99zz-bootfix"
+else
+    echo "❌ 缺少 files/etc/init.d/zz-bootfix，构建终止"
+    exit 1
+fi
+
 if [ -z "$CUSTOM_PACKAGES" ]; then
   echo "⚪️ 未选择 任何第三方软件包"
 else

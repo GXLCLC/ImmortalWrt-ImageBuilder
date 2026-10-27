@@ -1,0 +1,106 @@
+#!/bin/sh /etc/rc.common
+# 开机保障脚本：每次启动都确保关键服务处于正确状态，并写下诊断日志
+#
+# 为什么需要它：之前的做法是 uci-defaults 只跑一次，一旦某个服务在第一次
+# 启动时因为网络未就绪/崩溃而未起来，后面就再也没人管它，表现为"改了没用、
+# 下次刷机又好了又坏"的重复故障。这里改成 START=99 的 init 脚本，
+# 排在 appfilter(96) / nlbwmon(60) / AdGuardHome(19) 之后，每次开机复查一遍。
+#
+# 诊断日志：/etc/config/boot-fix.log
+
+START=99
+STOP=20
+
+LOG=/etc/config/boot-fix.log
+
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOG"; }
+is_running() { /etc/init.d/"$1" running >/dev/null 2>&1; }
+
+ensure_service() {
+	local name="$1"
+	[ -x "/etc/init.d/$name" ] || { log "$name: 缺少 init 脚本，跳过"; return; }
+
+	/etc/init.d/"$name" enabled || /etc/init.d/"$name" enable >/dev/null 2>&1
+
+	if is_running "$name"; then
+		/etc/init.d/"$name" restart >/dev/null 2>&1
+	else
+		/etc/init.d/"$name" start >/dev/null 2>&1
+	fi
+	sleep 1
+
+	if is_running "$name"; then
+		log "$name: running"
+	else
+		log "$name: DOWN（已 enable，重启后仍失败）"
+	fi
+}
+
+start() {
+	: > "$LOG"
+	log "===== boot-fix start ====="
+
+	# ── 1) 防火墙流量卸载：软件开启、硬件关闭 ──
+	if uci -q get firewall.@defaults[0] >/dev/null 2>&1; then
+		uci -q set firewall.@defaults[0].flow_offloading='1'
+		uci -q set firewall.@defaults[0].flow_offloading_hw='0'
+		uci -q commit firewall
+		log "firewall: flow_offloading=1 flow_offloading_hw=0"
+	fi
+
+	# ── 2) OAF（appfilter + luci-app-oaf）──
+	if [ -x /etc/init.d/appfilter ]; then
+		log "appfilter 版本: $(opkg list-installed 2>/dev/null | awk '$1=="appfilter"{print $3}')"
+		ensure_service appfilter
+		sleep 1
+		log "kmod-oaf 已加载: $(lsmod 2>/dev/null | grep -c '^oaf')"
+		log "oafd 进程: $(pgrep oafd >/dev/null 2>&1 && echo yes || echo no)"
+		log "ubus fwx 对象数: $(ubus list 2>/dev/null | grep -c '^fwx')"
+		log "配置 /etc/config/fwx: $([ -f /etc/config/fwx ] && echo 存在 || echo 缺失)"
+	fi
+
+	# ── 3) AdGuardHome ──
+	# 注意：不要删除 old_redirect/old_port/old_enabled，那是插件用来清理旧
+	# iptables 规则的依据；删了会导致规则重复叠加。这里只保证 enabled=1 并重启，
+	# 由插件自身的 _do_redirect 完成"清理旧规则 + 应用当前模式"。
+	if [ -f /etc/config/AdGuardHome ]; then
+		# 另一套（feed 的 adguardhome）保持关闭，避免抢 3000/5553
+		if [ -x /etc/init.d/adguardhome ]; then
+			uci -q set adguardhome.config.enabled='0'
+			uci -q commit adguardhome
+			/etc/init.d/adguardhome stop >/dev/null 2>&1
+			/etc/init.d/adguardhome disable >/dev/null 2>&1
+		fi
+
+		mkdir -p /etc/AdGuardHome
+		uci -q set AdGuardHome.@AdGuardHome[0].enabled='1'
+		uci -q commit AdGuardHome
+		ensure_service AdGuardHome
+		sleep 2
+		log "AGH redirect 模式: $(uci -q get AdGuardHome.@AdGuardHome[0].redirect) / 生效标记 $(cat /var/run/AdGredir 2>/dev/null)"
+		log "AGH 监听端口: $(netstat -ln 2>/dev/null | awk '$4 ~ /:3000$|:5553$/ {printf "%s ", $4}')"
+		log "dnsmasq 上游: $(uci -q get dhcp.@dnsmasq[0].server)"
+	fi
+
+	# ── 4) nlbwmon ──
+	lsmod 2>/dev/null | grep -q nf_conntrack_netlink || modprobe nf_conntrack_netlink 2>/dev/null
+	mkdir -p /var/lib/nlbwmon
+	ensure_service nlbwmon
+	log "nlbwmon 数据库文件数: $(ls -1 /var/lib/nlbwmon 2>/dev/null | wc -l)"
+
+	# ── 5) smartdns 默认值复查（幂等）──
+	if uci -q get smartdns.@smartdns[0] >/dev/null 2>&1; then
+		uci -q set smartdns.@smartdns[0].auto_set_dnsmasq='0'
+		uci -q set smartdns.@smartdns[0].port='6053'
+		uci -q set smartdns.@smartdns[0].tcp_server='0'
+		uci -q set smartdns.@smartdns[0].ipv6_server='0'
+		uci -q commit smartdns
+		log "smartdns: port=6053 tcp=0 ipv6=0 auto_set_dnsmasq=0"
+	fi
+
+	log "===== boot-fix done ====="
+}
+
+stop() {
+	log "boot-fix stop"
+}

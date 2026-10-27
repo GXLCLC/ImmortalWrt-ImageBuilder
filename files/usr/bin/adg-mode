@@ -1,0 +1,55 @@
+#!/bin/sh
+# AdGuardHome 重定向模式切换工具
+#
+# 为什么需要它：luci-app-adguardhome 的 _do_redirect 用 old_redirect / old_port /
+# old_enabled 三个选项记录"上次生效的模式"，并据此清理旧 iptables 规则或 dnsmasq
+# 上游。在 LuCI 里反复改模式时，这套状态机容易残留（旧规则没清、新规则没加），
+# 表现为"切到别的模式没反应、再切回来也失效"。
+#
+# 本脚本按"停服务 → 显式清理 → 写新模式 → 启动"的完整周期走一遍，
+# 保证每次切换都落到干净状态。
+#
+# 用法：
+#   adg-mode redirect           53 端口劫持到 AGH（默认）
+#   adg-mode dnsmasq-upstream   把 AGH 设为 dnsmasq 上游（127.0.0.1#5553）
+#   adg-mode exchange           AGH 占 53，dnsmasq 让位
+#   adg-mode none               不接管 DNS
+
+MODE="$1"
+CUR="$(uci -q get AdGuardHome.@AdGuardHome[0].redirect)"
+
+usage() {
+	echo "用法: adg-mode redirect|dnsmasq-upstream|exchange|none"
+	echo "当前模式: ${CUR:-unknown}"
+	exit 1
+}
+
+case "$MODE" in
+	redirect|dnsmasq-upstream|exchange|none) ;;
+	*) usage ;;
+esac
+
+[ -f /etc/config/AdGuardHome ] || { echo "未安装 luci-app-adguardhome"; exit 1; }
+
+echo "切换模式: ${CUR:-unknown} -> $MODE"
+
+# 1) 停服务，并让插件按它记录的 old_* 清理掉上一次的规则
+/etc/init.d/AdGuardHome stop >/dev/null 2>&1
+/etc/init.d/AdGuardHome do_redirect 0 >/dev/null 2>&1
+
+# 2) 写入新模式并确保启用
+uci set AdGuardHome.@AdGuardHome[0].redirect="$MODE"
+uci set AdGuardHome.@AdGuardHome[0].enabled='1'
+uci commit AdGuardHome
+
+# 3) 启动，插件按新模式重新应用
+/etc/init.d/AdGuardHome start >/dev/null 2>&1
+sleep 2
+
+echo "---- 结果 ----"
+echo "服务状态      : $(/etc/init.d/AdGuardHome running >/dev/null 2>&1 && echo running || echo stopped)"
+echo "监听端口      : $(netstat -ln 2>/dev/null | awk '$4 ~ /:3000$|:5553$/ {printf "%s ", $4}')"
+echo "dnsmasq 上游  : $(uci -q get dhcp.@dnsmasq[0].server)"
+echo "dnsmasq 端口  : $(uci -q get dhcp.@dnsmasq[0].port)"
+echo "53 劫持规则数 : $(iptables -t nat -S PREROUTING 2>/dev/null | grep -c 'dport 53')"
+echo "生效标记      : $(cat /var/run/AdGredir 2>/dev/null)"
