@@ -1,6 +1,12 @@
 # [新手指导](https://github.com/wukongdaily/AutoBuildImmortalWrt/wiki) 👈🏻
 # ImmortalWrt-ImageBuilder
 
+**📌 本分支说明（x86-64 / 24.10.x 专用）**
+
+> 本分支 `x86-64-24.10` 仅维护 **x86_64 架构 + ImmortalWrt 24.10.x** 的固件构建，其余平台（rockchip / sunxi / 无线硬路由 / 树莓派 / N1 / armsr / GL.iNet 等）的脚本与工作流已在本分支移除。
+> 需要其他平台或 25.12.x 时，请切换到 `master` 分支（与上游保持同步）。
+> 本分支可用工作流：`Build 24.10.x x86-64`、`Build 24.10.x ISO x86-64`、`Cleanup Old Workflow Runs`。
+
 **⚠️ 重要声明**
 
 > **本项目为个人独立维护的第三方项目(脚本)，与 ImmortalWrt 官方没有关联。** <br>
