@@ -181,6 +181,58 @@ else
     echo "⚪️ 未选择 luci-app-easytier"
 fi
 
+# ===== 自建 IPK 仓库（可选，把你自己收集的 ipk 装进固件）=====
+# 用法：在 workflow 表单的 custom_ipk_repo 里填自己的仓库地址，
+#   例如 https://github.com/你的用户名/my-ipk
+# 仓库约定（根目录）：
+#   x86_64/*.ipk   —— 你的 ipk，文件名需符合 <包名>_<版本>_<架构>.ipk
+#   *.ipk          —— 也可直接放根目录
+#   packages.txt   —— 每行一个要装进固件的包名，# 开头为注释
+#   SHA256SUMS     —— 可选，由 `sha256sum *.ipk > SHA256SUMS` 生成
+# custom_ipk_repo 为空时整段跳过，不影响原有构建。
+if [ -n "$CUSTOM_IPK_REPO" ]; then
+    case "$CUSTOM_IPK_REPO" in
+        https://*|git@*|http://*) ;;
+        *) echo "❌ custom_ipk_repo 不是合法的仓库地址: $CUSTOM_IPK_REPO"; exit 1 ;;
+    esac
+
+    echo "🔄 同步自建 IPK 仓库: $CUSTOM_IPK_REPO"
+    rm -rf /tmp/my-ipk
+    git clone --depth 1 "$CUSTOM_IPK_REPO" /tmp/my-ipk \
+        || { echo "❌ 克隆失败: $CUSTOM_IPK_REPO（私有仓库需换成带 token 的地址）"; exit 1; }
+
+    mkdir -p packages
+    # 只收 x86_64 与 all 的 ipk，防止误把别的架构塞进来导致构建失败
+    found=$(find /tmp/my-ipk -maxdepth 2 -type f -name '*.ipk' \
+        \( -name '*_x86_64.ipk' -o -name '*_all.ipk' \) -print -exec cp -f {} packages/ \; | wc -l)
+    echo "📦 已收集 $found 个 ipk 到 packages/"
+    if [ "$found" -eq 0 ]; then
+        echo "⚠️  仓库里没有找到 *_x86_64.ipk 或 *_all.ipk，请检查目录与文件命名"
+    fi
+
+    # 校验和：存在才校验，缺失只告警
+    if [ -f /tmp/my-ipk/SHA256SUMS ]; then
+        ( cd packages && sha256sum -c --ignore-missing /tmp/my-ipk/SHA256SUMS ) \
+            || { echo "❌ 自建仓库的 SHA256 校验失败"; exit 1; }
+    else
+        echo "⚠️  未找到 SHA256SUMS，跳过完整性校验（建议补上）"
+    fi
+
+    # 包名清单：决定哪些包真正装进固件
+    if [ -f /tmp/my-ipk/packages.txt ]; then
+        MY_PKGS=$(grep -vE '^[[:space:]]*(#|$)' /tmp/my-ipk/packages.txt | tr '\n' ' ')
+        if [ -n "$MY_PKGS" ]; then
+            PACKAGES="$PACKAGES $MY_PKGS"
+            echo "✅ 追加自建包: $MY_PKGS"
+        fi
+    else
+        echo "⚠️  未找到 packages.txt：ipk 已放进 packages/，但不会被安装"
+        echo "    请在仓库根目录建 packages.txt，每行写一个包名"
+    fi
+else
+    echo "⚪️ 未设置 custom_ipk_repo，跳出自建 IPK 仓库"
+fi
+
 # 构建镜像
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Building image with the following packages:"
 echo "$PACKAGES"

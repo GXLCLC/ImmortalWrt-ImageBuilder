@@ -53,6 +53,11 @@ on:
         options:
           - 'yes'
           - 'no'
+      custom_ipk_repo:
+        description: |
+          自建 IPK 仓库地址(可选)。留空则不使用；例: https://github.com/你的用户名/my-ipk
+          仓库需含 packages.txt(每行一个包名)，ipk 放 x86_64/ 或根目录
+        required: false
       enable_pppoe:
         description: "是否配置PPPoE拨号信息?"
         required: true
@@ -139,6 +144,7 @@ jobs:
             -e PROFILE=$ROOTFS_SIZE \
             -e INCLUDE_DOCKER=$include_docker \
             -e INCLUDE_DDNSTO=${{ github.event.inputs.include_ddnsto }} \
+            -e CUSTOM_IPK_REPO="${{ github.event.inputs.custom_ipk_repo }}" \
             -e ENABLE_PPPOE=${{ inputs.enable_pppoe }} \
             -e PPPOE_ACCOUNT=${{ inputs.pppoe_account }} \
             -e PPPOE_PASSWORD=${{ inputs.pppoe_password }} \
