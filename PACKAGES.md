@@ -31,3 +31,4 @@
 | luci-app-bandix      | Bandix流量监控 0.11                 | [timsaya/luci-app-bandix](https://github.com/timsaya/luci-app-bandix)                 |
 | luci-app-rtp2httpd      |  IPTV 流媒体转发服务器                 | [stackia/rtp2httpd](https://github.com/stackia/rtp2httpd)                 |                    |
 | luci-app-ddnsto      | DDNSTO 远程控制 4.2.2（需在官网获取 token，刷机后手动启用）                 | [linkease/ddnsto](https://github.com/linkease/ddnsto)　预编译包: dl.openwrt.ai/packages-25.12/x86_64/kiddin9/                 |
+| luci-app-wol      | 网络唤醒 Wake-on-LAN（依赖 etherwake，官方源）                 | 取自官方 luci 源，存放于 GXLCLC/openwrt-ipk-24.10-x86_64                 |

@@ -1,0 +1,45 @@
+#!/bin/sh
+# AdGuardHome 首次开机启用
+#
+# 故障根因（两个叠加）：
+#   1) luci-app-adguardhome 自带的 /etc/config/AdGuardHome 默认是
+#        option enabled '0'    → /etc/init.d/AdGuardHome 直接 return，服务不启动
+#        option redirect 'none' → 重定向模式不生效
+#      所以 3000 端口没有监听，Web 后台自然打不开。
+#   2) 固件里同时存在 feed 的 adguardhome 包所带的第二套服务
+#      /etc/init.d/adguardhome（默认也是关闭），两套会争抢 3000 / 5553 端口。
+#      这里明确只启用 LuCI 这一套（/etc/config/AdGuardHome + /etc/init.d/AdGuardHome），
+#      另一套保持关闭。
+#
+# 说明：redirect 取值
+#   redirect          = iptables 劫持 53 端口到 AGH（用户要求的效果）
+#   dnsmasq-upstream  = 让 dnsmasq 把 AGH 当上游（更保守，不依赖 iptables）
+#   若 redirect 模式下 DNS 异常，可改为 dnsmasq-upstream 后重启服务。
+
+CFGLOG=/etc/config/uci-defaults-log.txt
+
+# ── 关闭 feed 版的那一套，避免端口冲突 ──
+if [ -x /etc/init.d/adguardhome ]; then
+    uci -q set adguardhome.config.enabled='0'
+    uci -q commit adguardhome
+    /etc/init.d/adguardhome stop >/dev/null 2>&1
+    /etc/init.d/adguardhome disable >/dev/null 2>&1
+    echo "adguardhome: feed 版服务已停用（保留二进制）at $(date)" >> "$CFGLOG"
+fi
+
+# ── 启用 LuCI 版 ──
+if [ -f /etc/config/AdGuardHome ]; then
+    # 工作目录（/etc/config/AdGuardHome 里 workdir 指向此处），缺失时 AGH 可能启动失败
+    mkdir -p /etc/AdGuardHome
+
+    uci -q set AdGuardHome.AdGuardHome.enabled='1'
+    uci -q set AdGuardHome.AdGuardHome.httpport='3000'
+    uci -q set AdGuardHome.AdGuardHome.redirect='redirect'
+    uci -q commit AdGuardHome
+
+    /etc/init.d/AdGuardHome enable
+    /etc/init.d/AdGuardHome restart
+    echo "adguardhome: enabled, redirect=redirect, http=3000 at $(date)" >> "$CFGLOG"
+fi
+
+exit 0

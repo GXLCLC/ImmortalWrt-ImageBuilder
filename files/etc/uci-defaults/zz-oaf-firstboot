@@ -1,0 +1,66 @@
+#!/bin/sh
+# OAF（OpenAppFilter，即 appfilter + luci-app-oaf）首次开机初始化
+#
+# 故障根因：appfilter 包在固件里没有放置 /etc/rc.d 自启链接，服务默认不启动。
+# 而它的 start_service() 第一步 ensure_default_configs 才会创建
+# /etc/config/fwx 等配置文件。配置不存在时：
+#   - LuCI 的 OAF 页面读不到配置 → 显示"加载失败"、保存按钮失效
+#   - oafd / rule_manager 没运行 → 识别不到在线应用与用户
+#
+# 处理：显式 enable 并 start 一次，让配置与守护进程就位；
+# 若 start 因开机早期网络未就绪而失败，则用同样的内容兜底写入配置文件。
+
+CFGLOG=/etc/config/uci-defaults-log.txt
+
+if [ -x /etc/init.d/appfilter ]; then
+    /etc/init.d/appfilter enable
+    /etc/init.d/appfilter start
+    echo "oaf: appfilter enabled+started at $(date)" >> "$CFGLOG"
+fi
+
+# 兜底：start 失败时至少保证配置文件存在（内容与 init 脚本内 heredoc 完全一致）
+if [ ! -f /etc/config/fwx ]; then
+    cat > /etc/config/fwx <<'EOF'
+config global global
+	option lan_ifname 'br-lan'
+	option tcp_rst '1'
+	option theme_mode '1'
+	option feature_token ''
+
+config appfilter appfilter
+	option enable 1
+
+config macfilter macfilter
+	option enable 1
+
+config record 'record'
+	option enable '1'
+	option record_time '3'
+	option app_valid_time '3'
+	option history_data_size '10'
+	option history_data_path '/tmp/oaf'
+	option base_data_path '/tmp/oaf'
+
+config network network
+	option work_mode 0
+
+config dashboard 'dashboard'
+
+config advanced 'advanced'
+	option disable_hnat '0'
+
+config status 'status'
+	option notice_status '0'
+EOF
+    : > /etc/config/appfilter
+    : > /etc/config/appfilter_whitelist
+    printf "config whitelist 'whitelist'\n" > /etc/config/fwx_record
+    printf "config global 'global'\n\toption enable '1'\n" > /etc/config/macfilter
+    : > /etc/config/macfilter_whitelist
+    printf "config settings 'base'\n" > /etc/config/mac_blacklist
+    : > /etc/config/user_info
+    chmod 0644 /etc/config/fwx /etc/config/appfilter /etc/config/fwx_record
+    echo "oaf: configs written by fallback at $(date)" >> "$CFGLOG"
+fi
+
+exit 0

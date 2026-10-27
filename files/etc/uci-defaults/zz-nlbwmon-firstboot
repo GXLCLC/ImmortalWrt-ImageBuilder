@@ -1,0 +1,21 @@
+#!/bin/sh
+# nlbwmon 流量统计首次开机启用
+#
+# 故障根因：nlbwmon 包内没有 /etc/rc.d 自启链接，服务从未启动。
+# 数据库 /var/lib/nlbwmon 一直是空的，LuCI 环形图取不到数据 → 显示灰色。
+# 依赖 kmod-nf-conntrack-netlink 由包依赖自动安装，但服务不跑就没意义。
+
+CFGLOG=/etc/config/uci-defaults-log.txt
+
+# 确保 conntrack 记账模块在内核中（安装后一般已随 /etc/modules.d 自动加载）
+lsmod 2>/dev/null | grep -q nf_conntrack_netlink || modprobe nf_conntrack_netlink 2>/dev/null
+
+mkdir -p /var/lib/nlbwmon
+
+if [ -x /etc/init.d/nlbwmon ]; then
+    /etc/init.d/nlbwmon enable
+    /etc/init.d/nlbwmon restart
+    echo "nlbwmon: enabled+restarted at $(date)" >> "$CFGLOG"
+fi
+
+exit 0
