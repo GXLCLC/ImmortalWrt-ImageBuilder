@@ -118,24 +118,29 @@ if echo "$PACKAGES" | grep -q "luci-app-ssr-plus"; then
 else
     echo "⚪️ 未选择 luci-app-ssr-plus"
 fi
-# ===== DDNSTO 远程控制（第三方预编译包，固定版本 + SHA256 校验）=====
-# 来源: https://dl.openwrt.ai/packages-24.10/x86_64/kiddin9/
-# 已核验: ddnstod / ddwebdav 均为 ELF 64-bit x86-64 可执行文件
+# ===== 通用：带 SHA256 校验的 ipk 下载 =====
+# 供 DDNSTO / EasyTier 等「固定版本、不引入第三方 feed」的场景复用
+mkdir -p packages
+fetch_ipk() {
+    url="$1"; out="$2"; sha="$3"
+    echo "⬇️  下载 $out"
+    wget -q -O "$out" "$url" || { echo "❌ 下载失败: $url"; exit 1; }
+    echo "${sha}  ${out}" | sha256sum -c - || { echo "❌ SHA256 校验失败: $out"; exit 1; }
+}
+
+# ===== DDNSTO 远程控制（预编译包，固定版本 + SHA256 校验）=====
+# 来源: https://dl.openwrt.ai/packages-25.12/x86_64/kiddin9/
+#   说明：24.10 目录里只到 3.0.4，4.2.2 只在 25.12 目录。
+#   已核验 ddnstod 为静态链接 ELF x86-64（无 PT_INTERP），不依赖目标系统 musl 版本，
+#   故 25.12 目录的包在 24.10 上可安全运行。
 # 注意: 包内默认 enabled=0 且 token 为空，服务不会自启，需刷机后在 LuCI 填入 token 并启用
 if [ "$INCLUDE_DDNSTO" = "yes" ]; then
-    DDNSTO_BASE="https://dl.openwrt.ai/packages-24.10/x86_64/kiddin9"
-    DDNSTO_PKG="ddnsto_3.0.4~8664-r17_all.ipk"
-    DDNSTO_LUCI_PKG="luci-app-ddnsto_3.0.4-r1-r3_all.ipk"
-    DDNSTO_SHA="99746b87dba654b14e25ea0415b1160ab295ae3cf043a9b70da55ac9d83e1e16"
-    DDNSTO_LUCI_SHA="0080bcc017b0691a4e08ad033baae0edfe4bc87cc60b5be270a847fda8b64bde"
+    DDNSTO_BASE="https://dl.openwrt.ai/packages-25.12/x86_64/kiddin9"
+    DDNSTO_PKG="ddnsto_4.2.2~8664-r3_all.ipk"
+    DDNSTO_LUCI_PKG="luci-app-ddnsto_4.2.2-r1-r3_all.ipk"
+    DDNSTO_SHA="8f0a6df1f2e110caa7d43eef3e26f5382665ee83bc46bad9e38117c3a9e7816c"
+    DDNSTO_LUCI_SHA="7254a937bde2ff3edf806cd967c79e6a9a6dca51881e89dab0b1e585dd27e17b"
 
-    mkdir -p packages
-    fetch_ipk() {
-        url="$1"; out="$2"; sha="$3"
-        echo "⬇️  下载 $out"
-        wget -q -O "$out" "$url" || { echo "❌ 下载失败: $url"; exit 1; }
-        echo "${sha}  ${out}" | sha256sum -c - || { echo "❌ SHA256 校验失败: $out"; exit 1; }
-    }
     fetch_ipk "$DDNSTO_BASE/$DDNSTO_PKG" "packages/$DDNSTO_PKG" "$DDNSTO_SHA"
     fetch_ipk "$DDNSTO_BASE/$DDNSTO_LUCI_PKG" "packages/$DDNSTO_LUCI_PKG" "$DDNSTO_LUCI_SHA"
 
@@ -143,6 +148,37 @@ if [ "$INCLUDE_DDNSTO" = "yes" ]; then
     echo "✅ 已加入 DDNSTO 远程控制插件"
 else
     echo "⚪️ 未集成 DDNSTO"
+fi
+
+# ===== EasyTier 升级到 2.7.0（含中文界面）=====
+# 背景：wukongdaily/store 里只有 2.4.3，且中文语言文件被拆成独立的
+#   luci-i18n-easytier-zh-cn 包，未随主包安装 → 界面显示英文。
+#   2.7.0 的 luci-app-easytier 已内置 usr/lib/lua/luci/i18n/easytier.zh-cn.lmo，
+#   装完即中文，无需额外语言包。
+# 来源: https://dl.openwrt.ai/packages-25.12/x86_64/kiddin9/
+# 已核验: easytier-core / easytier-cli / easytier-web 均为静态链接 ELF x86-64；
+#   依赖 libc + kmod-tun，官方 24.10.6 的 kmods 源(6.6.133-r1) 及
+#   luci-compat / luci-lua-runtime 均可满足。
+if echo "$PACKAGES" | grep -q "luci-app-easytier"; then
+    ET_BASE="https://dl.openwrt.ai/packages-25.12/x86_64/kiddin9"
+    ET_PKG="easytier_2.7.0-r7_x86_64.ipk"
+    ET_LUCI_PKG="luci-app-easytier_2.7.0-r15_all.ipk"
+    ET_SHA="1a21f3d39143f5324bcceeb7423d5ec4a9ccd63017bd25ec8551ee38350487ea"
+    ET_LUCI_SHA="19219ddf336f32f2c84b6a57c56a04a8a95dd164f250e6db087e6b831ad1a284"
+
+    fetch_ipk "$ET_BASE/$ET_PKG" "packages/$ET_PKG" "$ET_SHA"
+    fetch_ipk "$ET_BASE/$ET_LUCI_PKG" "packages/$ET_LUCI_PKG" "$ET_LUCI_SHA"
+
+    # store 里 2.4.3 的 ipk 会被 prepare-packages.sh 一并解到 packages/，
+    # 这里清掉旧版本与独立语言包，保证同目录只有一份、构建结果确定。
+    find packages -maxdepth 1 -name 'easytier_*.ipk' ! -name "$ET_PKG" -delete 2>/dev/null
+    find packages -maxdepth 1 -name 'luci-app-easytier_*.ipk' ! -name "$ET_LUCI_PKG" -delete 2>/dev/null
+    find packages -maxdepth 1 -name 'luci-i18n-easytier-zh-cn_*.ipk' -delete 2>/dev/null
+
+    echo "✅ EasyTier 已升级至 2.7.0（luci 前端 2.7.0-r15，内置简体中文）"
+    ls -lah packages/ | grep -i easytier
+else
+    echo "⚪️ 未选择 luci-app-easytier"
 fi
 
 # 构建镜像
