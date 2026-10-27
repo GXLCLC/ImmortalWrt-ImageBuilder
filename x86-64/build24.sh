@@ -21,6 +21,19 @@ EOF
 echo "cat pppoe-settings"
 cat /home/build/immortalwrt/files/etc/config/pppoe-settings
 
+# ===== mwan3 默认配置清空 =====
+# 上游 mwan3 包自带 /etc/config/mwan3，预置 wan/wan6/wanb/wanb6 四个接口、
+# 10 个成员、5 个策略、3 条规则。其中 wan 为 enabled=1 且绑定 1.0.0.1 等跟踪 IP，
+# 首启（尤其单网口/无外网）会显示"离线"，其余接口显示"已禁用"，容易被误认为固件故障。
+# 本固件要求出厂为零接口、零策略，由用户按需在 LuCI 中自行创建。
+# 注意：本文件与 pppoe-settings 同路径，workflow 已把 custom/ 挂到 files/etc/config，
+# 因此写这里等价于写进随镜像发布的 FILES 覆盖层。
+cat > /home/build/immortalwrt/files/etc/config/mwan3 <<'EOF'
+# MultiWAN Manager 默认配置为空，请勿删除本文件。
+# 需要多拨或多线路时，请在 LuCI「网络 → MultiWAN 管理器」中新建接口。
+EOF
+echo "✅ mwan3 默认配置已清空"
+
 if [ -z "$CUSTOM_PACKAGES" ]; then
   echo "⚪️ 未选择 任何第三方软件包"
 else
