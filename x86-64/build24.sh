@@ -105,6 +105,33 @@ if echo "$PACKAGES" | grep -q "luci-app-ssr-plus"; then
 else
     echo "⚪️ 未选择 luci-app-ssr-plus"
 fi
+# ===== DDNSTO 远程控制（第三方预编译包，固定版本 + SHA256 校验）=====
+# 来源: https://dl.openwrt.ai/packages-24.10/x86_64/kiddin9/
+# 已核验: ddnstod / ddwebdav 均为 ELF 64-bit x86-64 可执行文件
+# 注意: 包内默认 enabled=0 且 token 为空，服务不会自启，需刷机后在 LuCI 填入 token 并启用
+if [ "$INCLUDE_DDNSTO" = "yes" ]; then
+    DDNSTO_BASE="https://dl.openwrt.ai/packages-24.10/x86_64/kiddin9"
+    DDNSTO_PKG="ddnsto_3.0.4~8664-r17_all.ipk"
+    DDNSTO_LUCI_PKG="luci-app-ddnsto_3.0.4-r1-r3_all.ipk"
+    DDNSTO_SHA="99746b87dba654b14e25ea0415b1160ab295ae3cf043a9b70da55ac9d83e1e16"
+    DDNSTO_LUCI_SHA="0080bcc017b0691a4e08ad033baae0edfe4bc87cc60b5be270a847fda8b64bde"
+
+    mkdir -p packages
+    fetch_ipk() {
+        url="$1"; out="$2"; sha="$3"
+        echo "⬇️  下载 $out"
+        wget -q -O "$out" "$url" || { echo "❌ 下载失败: $url"; exit 1; }
+        echo "${sha}  ${out}" | sha256sum -c - || { echo "❌ SHA256 校验失败: $out"; exit 1; }
+    }
+    fetch_ipk "$DDNSTO_BASE/$DDNSTO_PKG" "packages/$DDNSTO_PKG" "$DDNSTO_SHA"
+    fetch_ipk "$DDNSTO_BASE/$DDNSTO_LUCI_PKG" "packages/$DDNSTO_LUCI_PKG" "$DDNSTO_LUCI_SHA"
+
+    PACKAGES="$PACKAGES ddnsto luci-app-ddnsto"
+    echo "✅ 已加入 DDNSTO 远程控制插件"
+else
+    echo "⚪️ 未集成 DDNSTO"
+fi
+
 # 构建镜像
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Building image with the following packages:"
 echo "$PACKAGES"

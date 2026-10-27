@@ -44,6 +44,15 @@ on:
         options:
           - 'yes'
           - 'no'
+      include_ddnsto:
+        description: |
+          是否集成 DDNSTO 远程控制插件(刷机后需在 LuCI 填入 token 并启用服务)
+        required: false
+        default: 'yes'
+        type: choice
+        options:
+          - 'yes'
+          - 'no'
       enable_pppoe:
         description: "是否配置PPPoE拨号信息?"
         required: true
@@ -129,6 +138,7 @@ jobs:
             -v "${{ github.workspace }}/x86-64/build24.sh:/home/build/immortalwrt/build.sh" \
             -e PROFILE=$ROOTFS_SIZE \
             -e INCLUDE_DOCKER=$include_docker \
+            -e INCLUDE_DDNSTO=${{ github.event.inputs.include_ddnsto }} \
             -e ENABLE_PPPOE=${{ inputs.enable_pppoe }} \
             -e PPPOE_ACCOUNT=${{ inputs.pppoe_account }} \
             -e PPPOE_PASSWORD=${{ inputs.pppoe_password }} \
