@@ -55,9 +55,10 @@ on:
           - 'no'
       custom_ipk_repo:
         description: |
-          自建 IPK 仓库地址(可选)。留空则不使用；例: https://github.com/你的用户名/my-ipk
+          自建 IPK 仓库地址。留空则不使用；例: https://github.com/你的用户名/my-ipk
           仓库需含 packages.txt(每行一个包名)，ipk 放 x86_64/ 或根目录
         required: false
+        default: 'https://github.com/GXLCLC/openwrt-ipk-24.10-x86_64'
       enable_pppoe:
         description: "是否配置PPPoE拨号信息?"
         required: true
