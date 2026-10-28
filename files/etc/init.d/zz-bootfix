@@ -73,6 +73,19 @@ start() {
 		fi
 
 		mkdir -p /etc/AdGuardHome
+
+		# 首次初始化：出厂默认模式为 redirect（把 53 劫持到 AGH）。
+		# 用标记文件记录"已初始化"，之后用户在 LuCI 或用 adg-mode 改的模式
+		# 不会被开机脚本反复覆盖。
+		if [ ! -f /etc/config/agh-mode-init ]; then
+			cur="$(uci -q get AdGuardHome.@AdGuardHome[0].redirect)"
+			if [ -z "$cur" ] || [ "$cur" = "none" ]; then
+				uci -q set AdGuardHome.@AdGuardHome[0].redirect='redirect'
+				log "AGH 首次初始化: redirect=none -> redirect"
+			fi
+			touch /etc/config/agh-mode-init
+		fi
+
 		uci -q set AdGuardHome.@AdGuardHome[0].enabled='1'
 		uci -q commit AdGuardHome
 		ensure_service AdGuardHome
@@ -86,7 +99,9 @@ start() {
 	lsmod 2>/dev/null | grep -q nf_conntrack_netlink || modprobe nf_conntrack_netlink 2>/dev/null
 	mkdir -p /var/lib/nlbwmon
 	ensure_service nlbwmon
-	log "nlbwmon 数据库文件数: $(ls -1 /var/lib/nlbwmon 2>/dev/null | wc -l)"
+	log "nlbwmon 数据库目录: $(ls -1 /var/lib/nlbwmon 2>/dev/null | tr '\n' ' ')"
+	log "nlbw 统计周期: $(/usr/sbin/nlbw -c list 2>&1 | tr '\n' ' ')"
+	log "流量卸载: flow_offloading=$(uci -q get firewall.@defaults[0].flow_offloading) hw=$(uci -q get firewall.@defaults[0].flow_offloading_hw)（开启时 nlbwmon/OAF 统计会偏少，需要精确请执行 offload-mode off）"
 
 	# ── 5) smartdns 默认值复查（幂等）──
 	if uci -q get smartdns.@smartdns[0] >/dev/null 2>&1; then

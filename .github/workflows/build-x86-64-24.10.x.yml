@@ -86,7 +86,14 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Set executable permissions
-        run: chmod +x ${{ github.workspace }}/x86-64/build24.sh
+        run: |
+          chmod +x ${{ github.workspace }}/x86-64/build24.sh
+          # files/ 下的脚本必须在这里拿到可执行位：Windows 上 git 不保留 +x，
+          # 若只在容器里 chmod，剪出的镜像里可能是 644，导致 adg-mode 无法执行。
+          chmod -R 0755 ${{ github.workspace }}/files/etc/init.d 2>/dev/null || true
+          chmod 0755 ${{ github.workspace }}/files/usr/bin/* 2>/dev/null || true
+          echo "---- files/ 权限确认 ----"
+          ls -l ${{ github.workspace }}/files/etc/init.d ${{ github.workspace }}/files/usr/bin 2>/dev/null || true
 
       - name: Save Custom Router IP into OpenWrt files
         run: |

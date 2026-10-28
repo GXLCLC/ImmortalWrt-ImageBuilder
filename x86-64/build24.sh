@@ -42,8 +42,12 @@ if [ -f /home/build/immortalwrt/files/etc/init.d/zz-bootfix ]; then
     mkdir -p /home/build/immortalwrt/files/etc/rc.d
     chmod +x /home/build/immortalwrt/files/etc/init.d/zz-bootfix
     ln -sf ../init.d/zz-bootfix /home/build/immortalwrt/files/etc/rc.d/S99zz-bootfix
-    [ -x /home/build/immortalwrt/files/usr/bin/adg-mode ] && chmod +x /home/build/immortalwrt/files/usr/bin/adg-mode
-    echo "✅ 已注册开机保障脚本 S99zz-bootfix"
+    # 注意：这里必须无条件 chmod。Windows 上 git 不保留可执行位，
+    # 若用 [ -x ] 判断再加执行权，永远不会命中，最终固件里的脚本是 644。
+    for f in /home/build/immortalwrt/files/usr/bin/adg-mode /home/build/immortalwrt/files/usr/bin/offload-mode; do
+        [ -f "$f" ] && chmod 0755 "$f"
+    done
+    echo "✅ 已注册开机保障脚本 S99zz-bootfix，并修正辅助脚本可执行位"
 else
     echo "❌ 缺少 files/etc/init.d/zz-bootfix，构建终止"
     exit 1

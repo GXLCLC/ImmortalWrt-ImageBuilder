@@ -1,0 +1,49 @@
+#!/bin/sh
+# 流量卸载模式切换
+#
+# 背景：ImmortalWrt 24.10 的「路由/NAT 卸载」有两级：
+#   flow_offloading=1 + flow_offloading_hw=0  软件流量卸载（nftables flowtable）
+#   flow_offloading=1 + flow_offloading_hw=1  硬件流量卸载
+#   flow_offloading=0                          关闭
+#
+# 重要取舍（实测与官方文档一致）：
+#   只要开启流量卸载（软件或硬件），已建立的连接后续数据包会绕开 netfilter，
+#   于是 conntrack 的字节计数不再更新 →
+#     · nlbwmon 带宽监控统计几乎为 0（图表灰显/无数据）
+#     · OAF 行为管理只能看到连接建立阶段，应用识别与流量归属会失真
+#   要让这两个插件统计准确，必须 offload=off。
+#
+# 用法：
+#   offload-mode sw     软件卸载（默认，性能与可见性的折中）
+#   offload-mode hw     硬件卸载（最快，但 nlbwmon/OAF 基本失效）
+#   offload-mode off    关闭卸载（nlbwmon / OAF 统计最准）
+
+MODE="$1"
+
+case "$MODE" in
+	sw)
+		FL=1; HW=0
+		;;
+	hw)
+		FL=1; HW=1
+		;;
+	off)
+		FL=0; HW=0
+		;;
+	*)
+		echo "用法: offload-mode sw|hw|off"
+		echo "当前: flow_offloading=$(uci -q get firewall.@defaults[0].flow_offloading) flow_offloading_hw=$(uci -q get firewall.@defaults[0].flow_offloading_hw)"
+		exit 1
+		;;
+esac
+
+uci set firewall.@defaults[0].flow_offloading="$FL"
+uci set firewall.@defaults[0].flow_offloading_hw="$HW"
+uci commit firewall
+/etc/init.d/firewall reload >/dev/null 2>&1
+
+echo "已设置为 $MODE"
+echo "  flow_offloading    = $(uci -q get firewall.@defaults[0].flow_offloading)"
+echo "  flow_offloading_hw = $(uci -q get firewall.@defaults[0].flow_offloading_hw)"
+[ "$MODE" != "off" ] && echo "提示: 卸载开启时 nlbwmon / OAF 的统计会明显偏少，需要精确统计请执行 offload-mode off"
+exit 0
