@@ -253,38 +253,17 @@ else
 fi
 
 # ===== 本地包文件冲突预检 =====
-# opkg 遇到两个包安装同一路径会报 check_data_file_clashes 并让整次构建失败
-# （一次 4 分钟）。这里在 make image 之前先扫一遍 packages/，
-# 命中就立刻失败并指名道姓，避免盲目重跑。
-clash_dir=$(mktemp -d)
-: > "$clash_dir/index.txt"
-scanned=0
-for pkg in packages/*.ipk; do
-    [ -e "$pkg" ] || continue
-    name=$(basename "$pkg")
-    work="$clash_dir/$name"
-    mkdir -p "$work"
-    # tar.gz 格式的 ipk 才能这样拆；ar 格式会失败，跳过即可
-    if tar -xzf "$pkg" -C "$work" ./data.tar.gz >/dev/null 2>&1 && [ -f "$work/data.tar.gz" ]; then
-        scanned=$((scanned + 1))
-        tar -tzf "$work/data.tar.gz" 2>/dev/null \
-            | grep -v '/$' | sed 's|^\./||' \
-            | sed "s|^|${name}	|" >> "$clash_dir/index.txt"
-    fi
-done
-
-clash_files=$(cut -f2 "$clash_dir/index.txt" | sort | uniq -d)
-if [ -n "$clash_files" ]; then
-    echo "❌ 本地包之间存在文件路径冲突，make image 必定失败："
-    echo "$clash_files" | while IFS= read -r f; do
-        echo "   $f"
-        grep -F "	$f" "$clash_dir/index.txt" | cut -f1 | sed 's/^/       <- /'
-    done
-    rm -rf "$clash_dir"
+# opkg 遇到两个「不同包」声明同一路径会报 check_data_file_clashes，让整次
+# make image 失败（一次 4 分钟），报错还埋在几百行日志里。
+# 判定交给 shell/pkg-clash-check.sh，规则：
+#   · 只检查包名出现在 PACKAGES 里的包（packages/ 里堆着大量未启用的 store 插件）
+#   · 同名包多版本只按最高版本判定（opkg 不会同时装两个版本）
+#   · 同一 ipk 内部重复列出的路径不算冲突
+# 用 bash 显式调用，避免依赖可执行位（Windows 上 git 不保留 chmod +x）。
+if ! bash shell/pkg-clash-check.sh packages "$PACKAGES"; then
+    echo "❌ 本地包冲突预检未通过，构建终止（不必等 make image 报错）"
     exit 1
 fi
-rm -rf "$clash_dir"
-echo "✅ 本地包冲突预检通过（扫描 $scanned 个 ipk）"
 
 # 构建镜像
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Building image with the following packages:"
