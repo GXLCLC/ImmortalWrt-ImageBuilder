@@ -252,6 +252,40 @@ else
     echo "⚪️ 未设置 custom_ipk_repo，跳出自建 IPK 仓库"
 fi
 
+# ===== 本地包文件冲突预检 =====
+# opkg 遇到两个包安装同一路径会报 check_data_file_clashes 并让整次构建失败
+# （一次 4 分钟）。这里在 make image 之前先扫一遍 packages/，
+# 命中就立刻失败并指名道姓，避免盲目重跑。
+clash_dir=$(mktemp -d)
+: > "$clash_dir/index.txt"
+scanned=0
+for pkg in packages/*.ipk; do
+    [ -e "$pkg" ] || continue
+    name=$(basename "$pkg")
+    work="$clash_dir/$name"
+    mkdir -p "$work"
+    # tar.gz 格式的 ipk 才能这样拆；ar 格式会失败，跳过即可
+    if tar -xzf "$pkg" -C "$work" ./data.tar.gz >/dev/null 2>&1 && [ -f "$work/data.tar.gz" ]; then
+        scanned=$((scanned + 1))
+        tar -tzf "$work/data.tar.gz" 2>/dev/null \
+            | grep -v '/$' | sed 's|^\./||' \
+            | sed "s|^|${name}	|" >> "$clash_dir/index.txt"
+    fi
+done
+
+clash_files=$(cut -f2 "$clash_dir/index.txt" | sort | uniq -d)
+if [ -n "$clash_files" ]; then
+    echo "❌ 本地包之间存在文件路径冲突，make image 必定失败："
+    echo "$clash_files" | while IFS= read -r f; do
+        echo "   $f"
+        grep -F "	$f" "$clash_dir/index.txt" | cut -f1 | sed 's/^/       <- /'
+    done
+    rm -rf "$clash_dir"
+    exit 1
+fi
+rm -rf "$clash_dir"
+echo "✅ 本地包冲突预检通过（扫描 $scanned 个 ipk）"
+
 # 构建镜像
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Building image with the following packages:"
 echo "$PACKAGES"
